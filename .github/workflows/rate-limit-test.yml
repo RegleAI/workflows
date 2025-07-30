@@ -1,0 +1,53 @@
+name: Rate Limit Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-rate-limits:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Setup Test Environment
+      run: |
+        echo "Setting up rate limit test..."
+        
+    - name: Test Rate Limiting
+      run: |
+        cat > rate-limit-test.sh << 'EOF'
+        #!/bin/bash
+        
+        API_URL="${{ secrets.API_URL }}"
+        USER_KEY="${{ secrets.USER_API_KEY }}"
+        
+        echo "Testing rate limits (making 52 requests)..."
+        
+        for i in {1..52}; do
+          response=$(curl -s -w "\n%{http_code}" -X POST $API_URL/chat \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: $USER_KEY" \
+            -d "{\"question\": \"Rate limit test $i\"}")
+          
+          http_code=$(echo "$response" | tail -n1)
+          
+          if [ "$http_code" = "429" ]; then
+            echo "✅ Rate limit triggered at request $i (Expected behavior)"
+            body=$(echo "$response" | head -n-1)
+            echo "Response: $body"
+            exit 0
+          elif [ "$http_code" = "200" ]; then
+            echo "Request $i: Success"
+          else
+            echo "❌ Unexpected status code: $http_code at request $i"
+            exit 1
+          fi
+          
+          sleep 0.5
+        done
+        
+        echo "❌ Rate limit was not triggered after 52 requests!"
+        exit 1
+        EOF
+        
+        chmod +x rate-limit-test.sh
+        ./rate-limit-test.sh
